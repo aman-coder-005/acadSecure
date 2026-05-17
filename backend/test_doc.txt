@@ -1,0 +1,1 @@
+﻿This is a sample academic essay about machine learning. Neural networks are a subset of machine learning inspired by the human brain. Deep learning uses multiple layers of neural networks to learn complex patterns from data.

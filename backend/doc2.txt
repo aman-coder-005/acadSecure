@@ -1,0 +1,1 @@
+For tasks involving identifying images, neural networks with many layers work exceptionally well because they extract features at multiple levels.
