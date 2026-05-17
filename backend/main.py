@@ -34,6 +34,8 @@ from preprocessing import preprocess_text, preprocess_batch
 from similarity import check_similarity
 from ai_detection import detect_ai_content
 from collusion import detect_collusion
+from scoring import calculate_integrity_score
+from blockchain import hash_document, store_report_on_chain, verify_document_on_chain, get_report_from_chain
 
 # ── Logging setup ──────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -185,6 +187,46 @@ class CollusionResponse(BaseModel):
     links: list[CollusionLink]
     clusters: list[CollusionCluster]
     message: str
+
+
+# ── Module 6 — Scoring models ─────────────────────────────────────────────
+
+class ScoreRequest(BaseModel):
+    plagiarism_percent: float = Field(..., ge=0, le=100, description="Plagiarism percentage (0-100)")
+    ai_percent: float = Field(..., ge=0, le=100, description="AI generation probability (0-100)")
+    collusion_risk_percent: float = Field(..., ge=0, le=100, description="Collusion risk percentage (0-100)")
+
+class ScoreDetails(BaseModel):
+    plagiarism_percent: float
+    ai_percent: float
+    collusion_risk_percent: float
+
+class ScoreResponse(BaseModel):
+    originality_score: float
+    plagiarism_risk: str
+    ai_risk: str
+    collusion_risk: str
+    details: ScoreDetails
+
+
+# ── Module 7 — Blockchain models ──────────────────────────────────────────
+
+class StoreReportRequest(BaseModel):
+    doc_id: str = Field(..., description="The ID of the document to store.")
+    originality_score: float
+    plagiarism_risk: str
+    ai_risk: str
+    collusion_risk: str
+
+class StoreReportResponse(BaseModel):
+    doc_hash: str
+    tx_hash: str
+    block_number: int
+    message: str
+
+class VerifyReportResponse(BaseModel):
+    is_verified: bool
+    report: dict | None = None
 
 
 # ── Routes ─────────────────────────────────────────────────────────────────
@@ -575,6 +617,96 @@ async def analyze_collusion(threshold: float = 0.75):
     except Exception as exc:
         logger.exception("Collusion detection failed")
         raise HTTPException(status_code=500, detail=f"Collusion detection error: {exc}") from exc
+
+
+# ── Module 6 — Scoring endpoints ───────────────────────────────────────────
+
+@app.post(
+    "/score",
+    response_model=ScoreResponse,
+    tags=["Module 6 — Integrity Scoring"],
+    summary="Compute overall academic integrity score",
+    description=(
+        "Computes the Originality Score using the formula: "
+        "100 - (0.4 × plagiarism%) - (0.4 × ai%) - (0.2 × collusion_risk%). "
+        "Returns the final score and risk labels for each dimension."
+    ),
+)
+async def compute_integrity_score(request: ScoreRequest):
+    """
+    **POST /score**
+    """
+    try:
+        result = calculate_integrity_score(
+            plagiarism_percent=request.plagiarism_percent,
+            ai_percent=request.ai_percent,
+            collusion_risk_percent=request.collusion_risk_percent,
+        )
+        return ScoreResponse(**result)
+    except Exception as exc:
+        logger.exception("Scoring computation failed")
+        raise HTTPException(status_code=500, detail=f"Scoring error: {exc}") from exc
+
+
+# ── Module 7 — Blockchain endpoints ────────────────────────────────────────
+
+@app.post(
+    "/blockchain/store",
+    response_model=StoreReportResponse,
+    tags=["Module 7 — Blockchain Integration"],
+    summary="Store an integrity report on the blockchain",
+)
+async def store_blockchain_report(request: StoreReportRequest):
+    """
+    **POST /blockchain/store**
+    Hashes the document and stores the originality report on Ganache.
+    """
+    record = _DOCUMENT_STORE.get(request.doc_id)
+    if not record:
+        raise HTTPException(status_code=404, detail=f"Document '{request.doc_id}' not found.")
+        
+    try:
+        # Generate hash of document text
+        doc_hash = hash_document(record["text"])
+        
+        tx_hash, block_number = store_report_on_chain(
+            doc_hash=doc_hash,
+            originality_score=request.originality_score,
+            plagiarism_risk=request.plagiarism_risk,
+            ai_risk=request.ai_risk,
+            collusion_risk=request.collusion_risk
+        )
+        
+        return StoreReportResponse(
+            doc_hash=doc_hash,
+            tx_hash=tx_hash,
+            block_number=block_number,
+            message="Report successfully stored on blockchain."
+        )
+    except Exception as exc:
+        logger.exception("Blockchain storage failed")
+        raise HTTPException(status_code=500, detail=f"Blockchain error: {exc}") from exc
+
+@app.get(
+    "/blockchain/verify/{doc_hash}",
+    response_model=VerifyReportResponse,
+    tags=["Module 7 — Blockchain Integration"],
+    summary="Verify a document hash on the blockchain",
+)
+async def verify_blockchain_report(doc_hash: str):
+    """
+    **GET /blockchain/verify/{doc_hash}**
+    Check if a report exists for the given document hash, and return it.
+    """
+    try:
+        is_verified = verify_document_on_chain(doc_hash)
+        if is_verified:
+            report = get_report_from_chain(doc_hash)
+            return VerifyReportResponse(is_verified=True, report=report)
+        return VerifyReportResponse(is_verified=False)
+    except Exception as exc:
+        logger.exception("Blockchain verification failed")
+        raise HTTPException(status_code=500, detail=f"Blockchain error: {exc}") from exc
 
 
 # ── Application entry point (run directly with `python main.py`) ───────────

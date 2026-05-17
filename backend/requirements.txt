@@ -19,6 +19,7 @@ scipy==1.13.0
 
 # ── Blockchain (Module 7) ───────────────────────────────────
 web3==6.18.0
+py-solc-x==2.0.3
 
 # ── Database (Module 3 onwards) ────────────────────────────
 pymongo==4.7.2
