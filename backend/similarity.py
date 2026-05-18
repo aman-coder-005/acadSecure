@@ -36,12 +36,8 @@ def _get_st_model():
             _ST_MODEL = SentenceTransformer('all-MiniLM-L6-v2')
             logger.info("SentenceTransformer model loaded.")
         except ImportError:
-            logger.warning("sentence_transformers not found. Using MockModel.")
-            class MockModel:
-                def encode(self, sentences, convert_to_tensor=False):
-                    # Return dummy embeddings (random)
-                    return np.random.rand(len(sentences), 384)
-            _ST_MODEL = MockModel()
+            logger.warning("sentence_transformers not installed — semantic similarity disabled. Only TF-IDF will be used.")
+            _ST_MODEL = None  # Explicitly None so we can skip semantic checks
     return _ST_MODEL
 
 def compute_tfidf_similarity(source_text: str, target_texts: List[str]) -> List[float]:
@@ -64,13 +60,16 @@ def compute_tfidf_similarity(source_text: str, target_texts: List[str]) -> List[
 def compute_semantic_similarity(source_sentences: List[str], target_sentences: List[str], threshold: float = 0.75) -> Tuple[float, List[Dict[str, Any]]]:
     """
     Compute semantic similarity between sentences using Sentence Transformers.
-    Returns the average similarity of the top matches and the list of matching sentences.
+    Returns 0.0 and empty matches if model is not available.
     """
     if not source_sentences or not target_sentences:
         return 0.0, []
 
     model = _get_st_model()
-    
+    if model is None:
+        logger.debug("Semantic model unavailable — skipping semantic check.")
+        return 0.0, []
+
     # Generate embeddings
     source_embeddings = model.encode(source_sentences, convert_to_tensor=False)
     target_embeddings = model.encode(target_sentences, convert_to_tensor=False)
@@ -114,8 +113,20 @@ def check_similarity(new_doc: Dict[str, Any], stored_docs: List[Dict[str, Any]])
             "message": "No previous documents to compare against."
         }
 
-    new_clean_text = new_doc.get("clean_text", "")
-    new_sentences = new_doc.get("sentences", [])
+    # Extract preprocessing data from new_doc — it can be passed either as
+    # the full document store record {"preprocessing": {...}, ...}
+    # OR as the preprocessing dict directly {"clean_text": ..., "sentences": ...}
+    preprocessing_data = new_doc.get("preprocessing") or new_doc
+    new_clean_text = preprocessing_data.get("clean_text", "")
+    new_sentences = preprocessing_data.get("sentences", [])
+
+    if not new_clean_text.strip():
+        logger.warning("check_similarity: source document has no clean_text — was it preprocessed?")
+        return {
+            "max_similarity": 0.0,
+            "matches": [],
+            "message": "Source document has not been preprocessed yet."
+        }
     
     target_clean_texts = [doc.get("preprocessing", {}).get("clean_text", "") for doc in stored_docs]
     
