@@ -27,8 +27,12 @@ def detect_collusion(stored_docs: List[Dict[str, Any]], threshold: float = 0.75)
     Returns nodes, links, and identified clusters.
     """
     if len(stored_docs) < 2:
+        def _label(doc):
+            s = doc.get("submitter", "")
+            f = doc.get("filename", "unknown")
+            return f"{s} — {f}" if s and s != "anonymous" else f
         return {
-            "nodes": [{"id": doc["doc_id"], "label": doc.get("submitter", doc["filename"])} for doc in stored_docs],
+            "nodes": [{"id": doc["doc_id"], "label": _label(doc)} for doc in stored_docs],
             "links": [],
             "clusters": [],
             "message": "Not enough documents to detect collusion (minimum 2 required)."
@@ -36,7 +40,15 @@ def detect_collusion(stored_docs: List[Dict[str, Any]], threshold: float = 0.75)
 
     # Prepare data
     doc_ids = [doc["doc_id"] for doc in stored_docs]
-    labels = [doc.get("submitter", doc["filename"]) for doc in stored_docs]
+
+    def _make_label(doc):
+        submitter = doc.get("submitter", "")
+        filename  = doc.get("filename", "unknown")
+        if submitter and submitter != "anonymous":
+            return f"{submitter} — {filename}"
+        return filename
+
+    labels = [_make_label(doc) for doc in stored_docs]
     clean_texts = [doc.get("preprocessing", {}).get("clean_text", "") for doc in stored_docs]
 
     # Handle cases where documents might not be preprocessed yet
