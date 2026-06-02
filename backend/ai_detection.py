@@ -67,7 +67,7 @@ def detect_ai_content(text: str) -> Dict[str, float]:
             human_prob = round(score * 100, 2)
             ai_prob    = round((1 - score) * 100, 2)
 
-        print(f"[AI Detection] Result: {label} ({score:.3f}) → AI={ai_prob}%, Human={human_prob}%")
+        logger.info("AI Detection Result: %s (%.3f) -> AI=%.2f%%, Human=%.2f%%", label, score, ai_prob, human_prob)
 
         return {
             "ai_probability":    ai_prob,
@@ -75,6 +75,5 @@ def detect_ai_content(text: str) -> Dict[str, float]:
         }
 
     except Exception as exc:
-        print(f"[AI Detection] ERROR: {exc}")
         logger.error("AI detection failed: %s", exc)
         return {"ai_probability": 0.0, "human_probability": 0.0}
